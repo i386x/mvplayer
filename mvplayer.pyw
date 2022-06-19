@@ -48,6 +48,7 @@ class PlayerWindow(QWidget):
         "parent",
         "media",
         "is_paused",
+        "is_fullscreen",
         "vlc_instance",
         "vlc_player",
         "video_frame",
@@ -61,6 +62,7 @@ class PlayerWindow(QWidget):
         self.parent = parent
         self.media = None
         self.is_paused = True
+        self.is_fullscreen = False
 
         self.init_vlc()
         self.create()
@@ -72,6 +74,7 @@ class PlayerWindow(QWidget):
 
     def create(self):
         """Create window content."""
+        #self.setWindowFlags(Qt.CustomizeWindowHint)
         self.video_frame = QFrame(self)
         self.palette = self.video_frame.palette()
         self.palette.setColor(QPalette.Window, QColor(0, 0, 0))
@@ -91,18 +94,29 @@ class PlayerWindow(QWidget):
 
     def toggle_fullscreen(self):
         """Toggle player to/from full screen mode."""
-        self.hide()
-        if not self.isFullScreen():
-            #screenres = QApplication.desktop().screenGeometry(
-            #    self.parent.screen_num
-            #)
-            #self.move(screenres.x(), screenres.y())
-            #self.resize(screenres.width(), screenres.height())
-            self.showFullScreen()
+        #self.hide()
+        if not self.is_fullscreen:
+            self.hide()
+            self.setWindowFlags(Qt.CustomizeWindowHint)
+            screenres = QApplication.desktop().screenGeometry(
+                0 #self.parent.screen_num
+            )
+            self.move(screenres.x(), screenres.y())
+            self.resize(screenres.width(), screenres.height())
+            self.show()
+            self.is_fullscreen = True
+            #self.showFullScreen()
             #self.vlc_player.set_fullscreen(True)
         else:
+            self.hide()
+            self.setWindowFlags(Qt.Window)
+            screenres = QApplication.desktop().screenGeometry(0)
+            self.move(int(screenres.x() / 2), int(screenres.y() / 2))
+            self.resize(int(screenres.width() / 2), int(screenres.height() / 2))
+            self.show()
+            self.is_fullscreen = False
             #self.vlc_player.set_fullscreen(False)
-            self.showNormal()
+            #self.showNormal()
 
 
 class VideoWidget(QVideoWidget):
