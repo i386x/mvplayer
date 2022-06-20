@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 # SPDX-License-Identifier: MIT
 
-import os.path
 import platform
 import sys
 
@@ -9,19 +8,10 @@ from PyQt5.QtCore import (
     Qt,
     QDir,
     QTimer,
-    QUrl,
 )
 from PyQt5.QtGui import (
     QColor,
     QPalette,
-)
-from PyQt5.QtMultimedia import (
-    QMediaContent,
-    QMediaPlayer,
-    QMediaPlaylist,
-)
-from PyQt5.QtMultimediaWidgets import (
-    QVideoWidget,
 )
 from PyQt5.QtWidgets import (
     QApplication,
@@ -45,380 +35,283 @@ class PlayerWindow(QWidget):
     """Player window using vlc."""
 
     __slots__ = (
-        "parent",
-        "media",
-        "is_paused",
-        "is_fullscreen",
-        "vlc_instance",
-        "vlc_player",
-        "video_frame",
-        "palette",
-        "layout",
+        "_owner",
+        "_media",
+        "_volume",
+        "_wnd_x",
+        "_wnd_y",
+        "_wnd_w",
+        "_wnd_h",
+        "_wnd_flags",
+        "_ly_margins",
+        "_is_fullscreen",
+        "_vlc_instance",
+        "_vlc_player",
+        "_video_frame",
+        "_palette",
+        "_layout",
     )
 
-    def __init__(self, parent):
+    def __init__(self, owner):
         """Initialize window instance."""
         QWidget.__init__(self)
-        self.parent = parent
-        self.media = None
-        self.is_paused = True
-        self.is_fullscreen = False
+        self._owner = owner
+        self._media = None
+        self._volume = 100
+        self._wnd_x = None
+        self._wnd_y = None
+        self._wnd_w = None
+        self._wnd_h = None
+        self._wnd_flags = None
+        self._ly_margins = None
+        self._is_fullscreen = False
 
         self.init_vlc()
-        self.create()
+        self.create_ui()
 
     def init_vlc(self):
         """Initialize vlc."""
-        self.vlc_instance = vlc.Instance("--input-repeat=999999")
-        self.vlc_player = self.vlc_instance.media_player_new()
+        self._vlc_instance = vlc.Instance("--input-repeat=999999")
+        self._vlc_player = self._vlc_instance.media_player_new()
 
-    def create(self):
+    def create_ui(self):
         """Create window content."""
-        #self.setWindowFlags(Qt.CustomizeWindowHint)
-        self.video_frame = QFrame(self)
-        self.palette = self.video_frame.palette()
-        self.palette.setColor(QPalette.Window, QColor(0, 0, 0))
-        self.video_frame.setPalette(self.palette)
-        self.video_frame.setAutoFillBackground(True)
+        self.setMinimumSize(640, 480)
 
-        video_win_id = int(self.video_frame.winId())
+        self._video_frame = QFrame()
+        self._palette = self._video_frame.palette()
+        self._palette.setColor(QPalette.Window, QColor(0, 0, 0))
+        self._video_frame.setPalette(self._palette)
+        self._video_frame.setAutoFillBackground(True)
+
+        video_win_id = int(self._video_frame.winId())
         if platform.system() == "Linux":
-            self.vlc_player.set_xwindow(video_win_id)
+            self._vlc_player.set_xwindow(video_win_id)
         elif platform.system() == "Windows":
-            self.vlc_player.set_hwnd(video_win_id)
+            self._vlc_player.set_hwnd(video_win_id)
 
-        self.layout = QVBoxLayout()
-        self.layout.addWidget(self.video_frame)
+        self._layout = QVBoxLayout()
+        self._layout.addWidget(self._video_frame)
 
-        self.setLayout(self.layout)
+        self.setLayout(self._layout)
 
-    def toggle_fullscreen(self):
-        """Toggle player to/from full screen mode."""
-        #self.hide()
-        if not self.is_fullscreen:
-            self.hide()
-            self.setWindowFlags(Qt.CustomizeWindowHint)
-            screenres = QApplication.desktop().screenGeometry(
-                0 #self.parent.screen_num
-            )
-            self.move(screenres.x(), screenres.y())
-            self.resize(screenres.width(), screenres.height())
-            self.show()
-            self.is_fullscreen = True
-            #self.showFullScreen()
-            #self.vlc_player.set_fullscreen(True)
-        else:
-            self.hide()
-            self.setWindowFlags(Qt.Window)
-            screenres = QApplication.desktop().screenGeometry(0)
-            self.move(int(screenres.x() / 2), int(screenres.y() / 2))
-            self.resize(int(screenres.width() / 2), int(screenres.height() / 2))
-            self.show()
-            self.is_fullscreen = False
-            #self.vlc_player.set_fullscreen(False)
-            #self.showNormal()
+    def set_volume_action(self, volume):
+        """Set video volume."""
+        self._volume = volume
+        if not self._media:
+            return
+        self._vlc_player.audio_set_volume(self._volume)
 
+    def set_position_action(self):
+        """Set video position."""
+        if not self._media:
+            return
+        self._owner._owner._timer.stop()
+        pos = self._owner._position_slider.value()
+        self._vlc_player.set_position(pos / 1000.0)
+        self._owner._owner._timer.start()
 
-class VideoWidget(QVideoWidget):
-    """Customized video widget."""
-
-    __slots__ = ()
-
-    def __init__(self):
-        """Initialize video widget."""
-        QVideoWidget.__init__(self)
-
-    def toggle_fullscreen(self):
-        """Toggle window to/from full screen mode."""
-        self.setFullScreen(not self.isFullScreen())
-
-    def keyPressEvent(self, event):
-        """Key pressed handler."""
-        if event.key() == Qt.Key_Escape and self.isFullScreen():
-            self.setFullScreen(False)
-            event.accept()
-        else:
-            QVideoWidget.keyPressEvent(self, event)
-
-    def mouseDoubleClickEvent(self, event):
-        """Double click handler."""
-        self.toggle_fullscreen()
-        event.accept()
-
-
-class QtPlayerWindow(QWidget):
-    """Player window using Qt video."""
-
-    __slots__ = (
-        "parent",
-        "media_player",
-        "video_widget",
-        "layout",
-    )
-
-    def __init__(self, parent):
-        """Initialize window instance."""
-        QWidget.__init__(self)
-
-        self.parent = parent
-
-        self.create()
-
-    def open(self):
-        """Open a video."""
+    def open_action(self):
+        """Open a video to play."""
         filename, _ = QFileDialog.getOpenFileName(
             self, "Select a video", QDir.homePath()
         )
         if not filename:
             return
 
-        playlist = QMediaPlaylist()
-        playlist.addMedia(QMediaContent(QUrl.fromLocalFile(filename)))
-        playlist.setPlaybackMode(QMediaPlaylist.Loop)
+        self.release_media()
+        self._media = self._vlc_instance.media_new(filename)
+        self._vlc_player.set_media(self._media)
+        self._media.parse()
 
-        self.media_player.setPlaylist(playlist)
+        self._owner._volume_slider.setValue(self._volume)
 
-        self.parent.volume_slider.setValue(100)
-
+        self.setWindowTitle(self._media.get_meta(0))
         self.show()
 
-    def close(self):
+    def close_action(self):
         """Close the window."""
-        self.stop()
+        if not self._media:
+            return
+        if self._is_fullscreen:
+            self.toggle_fullscreen_action()
         self.hide()
+        self.release_media()
 
-    def play_pause(self):
+    def release_media(self):
+        """Release resources associated with the video."""
+        if not self._media:
+            return
+        self.stop_action()
+        self._vlc_player.set_media(None)
+        self._media = None
+
+    def play_pause_action(self):
         """Play/pause the video."""
-        if self.media_player.state() == QMediaPlayer.PlayingState:
-            self.media_player.pause()
+        if self._vlc_player.is_playing():
+            self._vlc_player.pause()
+            self._owner._play_pause_button.setText("Play")
         else:
+            if self._vlc_player.play() == -1:
+                return
             if self.isHidden():
                 self.show()
-            self.media_player.play()
+            self._owner._play_pause_button.setText("Pause")
+            self._owner._owner._timer.start()
 
-    def stop(self):
+    def stop_action(self):
         """Stop the video."""
-        self.media_player.stop()
+        self._vlc_player.stop()
+        self._owner._play_pause_button.setText("Play")
 
-    def toggle_fullscreen(self):
-        """Toggle window to/from full screen mode."""
-        self.video_widget.toggle_fullscreen()
+    def toggle_fullscreen_action(self):
+        """Toggle player to/from full screen mode."""
+        if not self._media:
+            return
+        self.hide()
+        if not self._is_fullscreen:
+            self._wnd_x = self.x()
+            self._wnd_y = self.y()
+            self._wnd_w = self.width()
+            self._wnd_h = self.height()
+            self._wnd_flags = self.windowFlags()
+            self._ly_margins = self._layout.contentsMargins()
 
-    def create(self):
-        """Create window content."""
-        self.media_player = QMediaPlayer(None, QMediaPlayer.VideoSurface)
-
-        self.video_widget = VideoWidget()
-
-        self.layout = QVBoxLayout()
-        self.layout.addWidget(self.video_widget)
-
-        self.setLayout(self.layout)
-
-        self.media_player.setVideoOutput(self.video_widget)
-        self.media_player.stateChanged.connect(self.state_changed)
-        self.media_player.positionChanged.connect(self.position_changed)
-        self.media_player.durationChanged.connect(self.duration_changed)
-
-    def set_volume(self, volume):
-        """Set video volume."""
-        self.media_player.setVolume(volume)
-
-    def set_position(self, position):
-        """Set video position."""
-        self.media_player.setPosition(position)
-
-    def state_changed(self, state):
-        """Called when media state has been changed."""
-        self.parent.play_pause_button.setText(
-            "Pause" if self.media_player.state() == QMediaPlayer.PlayingState \
-            else "Play"
-        )
-
-    def position_changed(self, position):
-        """Called when video position has been changed."""
-        self.parent.position_slider.setValue(position)
-
-    def duration_changed(self, duration):
-        """Called when video duration has been changed."""
-        self.parent.position_slider.setRange(0, duration)
+            screen_num = self._owner._screen_num
+            screen_count = QApplication.desktop().screenCount()
+            screenres = QApplication.desktop().screenGeometry(
+                screen_num if screen_num < screen_count else 0
+            )
+            self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+            self._layout.setContentsMargins(0, 0, 0, 0)
+            self.move(screenres.x(), screenres.y())
+            self.resize(screenres.width(), screenres.height())
+            self.showFullScreen()
+            self._is_fullscreen = True
+        else:
+            self.setWindowFlags(self._wnd_flags)
+            self._layout.setContentsMargins(
+                self._ly_margins.left(),
+                self._ly_margins.top(),
+                self._ly_margins.right(),
+                self._ly_margins.bottom()
+            )
+            self.move(self._wnd_x, self._wnd_y)
+            self.resize(self._wnd_w, self._wnd_h)
+            self.showNormal()
+            self._is_fullscreen = False
 
 
 class ControlPanel(QGroupBox):
     """Panel with controls."""
 
     __slots__ = (
-        "parent",
-        "screen_num",
-        "player",
-        "controls_layout",
-        "play_pause_button",
-        "stop_button",
-        "volume_slider",
-        "fullscreen_button",
-        "screen_label",
-        "open_button",
-        "close_button",
-        "position_slider",
-        "layout",
+        "_owner",
+        "_screen_num",
+        "_player",
+        "_controls_layout",
+        "_play_pause_button",
+        "_stop_button",
+        "_volume_slider",
+        "_fullscreen_button",
+        "_screen_label",
+        "_open_button",
+        "_close_button",
+        "_position_slider",
+        "_layout",
     )
 
-    def __init__(self, parent, screen_num):
+    def __init__(self, owner, screen_num):
         """Initialize the control panel."""
         QGroupBox.__init__(self)
         self.setStyleSheet("QGroupBox { border: 1px solid darkgrey; }")
         self.setFlat(False)
 
-        self.parent = parent
-        self.screen_num = screen_num
-        self.player = PlayerWindow(self)
-        #self.player = QtPlayerWindow(self)
+        self._owner = owner
+        self._screen_num = screen_num
+        self._player = PlayerWindow(self)
 
-        self.create()
+        self.create_ui()
 
-    def open(self):
-        """Open video to play."""
-        filename = QFileDialog.getOpenFileName(
-            self, "Select a video", os.path.expanduser("~")
-        )
-        if not filename:
-            return
-
-        self.player.media = self.player.vlc_instance.media_new(filename[0])
-        self.player.vlc_player.set_media(self.player.media)
-        self.player.media.parse()
-
-        self.volume_slider.setValue(100)
-
-        w, h = self.player.vlc_player.video_get_size()
-
-        self.player.setWindowTitle(self.player.media.get_meta(0))
-        self.player.resize(w, h)
-        self.player.show()
-        #self.player.open()
-
-    def close(self):
-        """Close video."""
-        self.stop()
-        self.player.hide()
-        #self.player.close()
-
-    def play_pause(self):
-        """Play/pause the video."""
-        if self.is_playing():
-            self.player.vlc_player.pause()
-            self.play_pause_button.setText("Play")
-            self.player.is_paused = True
-        else:
-            if self.player.vlc_player.play() == -1:
-                return
-            if self.player.isHidden():
-                self.player.show()
-            self.play_pause_button.setText("Pause")
-            self.parent.timer.start()
-            self.player.is_paused = False
-        #self.player.play_pause()
-
-    def stop(self):
-        """Stop playing the video."""
-        self.player.vlc_player.stop()
-        self.player.is_paused = True
-        self.play_pause_button.setText("Play")
-        #self.player.stop()
-
-    def set_volume(self, volume):
-        """Set video volume."""
-        self.player.vlc_player.audio_set_volume(volume)
-        #self.player.set_volume(volume)
-
-    def set_position(self):
-    #def set_position(self, position):
-        """Set video position."""
-        self.parent.timer.stop()
-        pos = self.position_slider.value()
-        self.player.vlc_player.set_position(pos / 1000.0)
-        self.parent.timer.start()
-        #self.player.set_position(position)
-
-    def fullscreen(self):
-        """Switch player to full screen."""
-        self.player.toggle_fullscreen()
-
-    def create(self):
+    def create_ui(self):
         """Create controls."""
-        self.controls_layout = QHBoxLayout()
+        self._controls_layout = QHBoxLayout()
 
-        self.play_pause_button = QPushButton("Play")
-        self.controls_layout.addWidget(self.play_pause_button)
-        self.play_pause_button.clicked.connect(self.play_pause)
+        self._play_pause_button = QPushButton("Play")
+        self._controls_layout.addWidget(self._play_pause_button)
+        self._play_pause_button.clicked.connect(self._player.play_pause_action)
 
-        self.stop_button = QPushButton("Stop")
-        self.controls_layout.addWidget(self.stop_button)
-        self.stop_button.clicked.connect(self.stop)
+        self._stop_button = QPushButton("Stop")
+        self._controls_layout.addWidget(self._stop_button)
+        self._stop_button.clicked.connect(self._player.stop_action)
 
-        self.volume_slider = QSlider(Qt.Horizontal, self)
-        self.volume_slider.setMaximum(100)
-        self.volume_slider.setValue(100)
-        self.volume_slider.setToolTip("Volume")
-        self.controls_layout.addWidget(self.volume_slider)
-        self.volume_slider.valueChanged.connect(self.set_volume)
-
-        self.controls_layout.addStretch(1)
-
-        self.fullscreen_button = QPushButton("Full Screen")
-        self.controls_layout.addWidget(self.fullscreen_button)
-        self.fullscreen_button.clicked.connect(self.fullscreen)
-
-        self.screen_label = QLabel()
-        self.screen_label.setText(f"Screen #{self.screen_num}")
-        self.controls_layout.addWidget(self.screen_label)
-
-        self.open_button = QPushButton("Open")
-        self.controls_layout.addWidget(self.open_button)
-        self.open_button.clicked.connect(self.open)
-
-        self.close_button = QPushButton("Close")
-        self.controls_layout.addWidget(self.close_button)
-        self.close_button.clicked.connect(self.close)
-
-        self.position_slider = QSlider(Qt.Horizontal, self)
-        self.position_slider.setMaximum(1000)
-        #self.position_slider.setRange(0, 0)
-        self.position_slider.setToolTip("Position")
-        self.position_slider.sliderMoved.connect(self.set_position)
-        self.position_slider.sliderPressed.connect(self.set_position)
-
-        self.layout = QVBoxLayout()
-        self.layout.addLayout(self.controls_layout)
-        self.layout.addWidget(self.position_slider)
-
-        self.setLayout(self.layout)
-
-    def is_playing(self):
-        """Check whether video is playing."""
-        return self.player.vlc_player.is_playing()
-
-    def update(self):
-        """Update the status of controls."""
-        if not self.player.media:
-            return
-        pos = int(self.player.vlc_player.get_position() * 1000)
-        self.position_slider.setValue(pos)
-        self.play_pause_button.setText(
-            "Play" if self.player.is_paused else "Pause"
+        self._volume_slider = QSlider(Qt.Horizontal, self)
+        self._volume_slider.setMaximum(100)
+        self._volume_slider.setValue(100)
+        self._volume_slider.setToolTip("Volume")
+        self._controls_layout.addWidget(self._volume_slider)
+        self._volume_slider.valueChanged.connect(
+            self._player.set_volume_action
         )
+
+        self._controls_layout.addStretch(1)
+
+        self._fullscreen_button = QPushButton("Full Screen")
+        self._controls_layout.addWidget(self._fullscreen_button)
+        self._fullscreen_button.clicked.connect(
+            self._player.toggle_fullscreen_action
+        )
+
+        self._screen_label = QLabel()
+        self._screen_label.setText(f"Screen #{self._screen_num}")
+        self._controls_layout.addWidget(self._screen_label)
+
+        self._open_button = QPushButton("Open")
+        self._controls_layout.addWidget(self._open_button)
+        self._open_button.clicked.connect(self._player.open_action)
+
+        self._close_button = QPushButton("Close")
+        self._controls_layout.addWidget(self._close_button)
+        self._close_button.clicked.connect(self._player.close_action)
+
+        self._position_slider = QSlider(Qt.Horizontal, self)
+        self._position_slider.setMaximum(1000)
+        self._position_slider.setToolTip("Position")
+        self._position_slider.sliderMoved.connect(
+            self._player.set_position_action
+        )
+        self._position_slider.sliderPressed.connect(
+            self._player.set_position_action
+        )
+
+        self._layout = QVBoxLayout()
+        self._layout.addLayout(self._controls_layout)
+        self._layout.addWidget(self._position_slider)
+
+        self.setLayout(self._layout)
+
+    def update_ui(self):
+        """Update the status of controls."""
+        if self._player._media:
+            pos = int(self._player._vlc_player.get_position() * 1000)
+            text = "Pause" if self._player._vlc_player.is_playing() else "Play"
+        else:
+            pos = 0
+            text = "Play"
+        self._position_slider.setValue(pos)
+        self._play_pause_button.setText(text)
 
 
 class MainWindow(QMainWindow):
     """Main window with controls."""
 
     __slots__ = (
-        "controls",
-        "widget",
-        "layout",
-        "shared_controls_layout",
-        "play_pause_all_button",
-        "stop_all_button",
+        "_controls",
+        "_widget",
+        "_layout",
+        "_shared_controls_layout",
+        "_play_pause_all_button",
+        "_stop_all_button",
     )
 
     def __init__(self):
@@ -426,58 +319,58 @@ class MainWindow(QMainWindow):
         QMainWindow.__init__(self)
         self.setWindowTitle("Multi Video Player")
 
-        self.controls = []
+        self._controls = []
 
-        self.create()
+        self.create_ui()
 
-    def play_pause_all(self):
+    def play_pause_all_action(self):
         """Play/pause all videos."""
-        for control in self.controls:
-            control.play_pause()
+        for control in self._controls:
+            control._player.play_pause_action()
 
-    def stop_all(self):
+    def stop_all_action(self):
         """Stop all videos."""
-        for control in self.controls:
-            control.stop()
+        for control in self._controls:
+            control._player.stop_action()
 
-    def create(self):
+    def create_ui(self):
         """Create controls widgets."""
-        self.widget = QWidget(self)
-        self.setCentralWidget(self.widget)
+        self._widget = QWidget(self)
+        self.setCentralWidget(self._widget)
 
-        self.layout = QVBoxLayout()
+        self._layout = QVBoxLayout()
 
         for i in range(MAX_DISPLAYS):
             control = ControlPanel(self, i + 1)
-            self.layout.addWidget(control)
-            self.controls.append(control)
+            self._layout.addWidget(control)
+            self._controls.append(control)
 
-        self.shared_controls_layout = QHBoxLayout()
+        self._shared_controls_layout = QHBoxLayout()
 
-        self.shared_controls_layout.addStretch(1)
+        self._shared_controls_layout.addStretch(1)
 
-        self.play_pause_all_button = QPushButton("Play/Pause all")
-        self.shared_controls_layout.addWidget(self.play_pause_all_button)
-        self.play_pause_all_button.clicked.connect(self.play_pause_all)
+        self._play_pause_all_button = QPushButton("Play/Pause all")
+        self._shared_controls_layout.addWidget(self._play_pause_all_button)
+        self._play_pause_all_button.clicked.connect(self.play_pause_all_action)
 
-        self.stop_all_button = QPushButton("Stop all")
-        self.shared_controls_layout.addWidget(self.stop_all_button)
-        self.stop_all_button.clicked.connect(self.stop_all)
+        self._stop_all_button = QPushButton("Stop all")
+        self._shared_controls_layout.addWidget(self._stop_all_button)
+        self._stop_all_button.clicked.connect(self.stop_all_action)
 
-        self.shared_controls_layout.addStretch(1)
+        self._shared_controls_layout.addStretch(1)
 
-        self.layout.addLayout(self.shared_controls_layout)
+        self._layout.addLayout(self._shared_controls_layout)
 
-        self.widget.setLayout(self.layout)
+        self._widget.setLayout(self._layout)
 
-        self.timer = QTimer(self)
-        self.timer.setInterval(100)
-        self.timer.timeout.connect(self.update)
+        self._timer = QTimer(self)
+        self._timer.setInterval(100)
+        self._timer.timeout.connect(self.update_ui)
 
-    def update(self):
+    def update_ui(self):
         """Update user interface status."""
-        for control in self.controls:
-            control.update()
+        for control in self._controls:
+            control.update_ui()
 
 
 if __name__ == "__main__":
